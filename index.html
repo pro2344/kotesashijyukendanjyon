@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>スタディダンジョンクエスト</title>
+<style>
+body{font-family:sans-serif;text-align:center;background:#f5f5f5}
+section{display:none}
+button{margin:5px;padding:8px}
+.gray{opacity:0.4}
+input,select{margin:4px}
+#log{background:#fff;border:1px solid #ccc;padding:6px;margin:6px;height:140px;overflow:auto;font-size:12px}
+#bossLog{background:#222;color:#fff;padding:10px;margin:10px;display:none}
+.fade{animation:fadeinout 2.5s ease-in-out}
+@keyframes fadeinout{0%{opacity:0}20%{opacity:1}80%{opacity:1}100%{opacity:0}}
+/* チャームボイス用ハート演出 */
+.heart{
+  position:fixed;
+  font-size:40px;
+  color:pink;
+  animation:heartFloat 1.5s ease-out forwards;
+  pointer-events:none;
+}
+@keyframes heartFloat{
+  0%{transform:translate(-50%,0) scale(0.5);opacity:0}
+  20%{opacity:1}
+  100%{transform:translate(-50%,-120px) scale(1.2);opacity:0}
+}
+</style>
+</head>
+<body>
+
+<section id="title">
+  <img src="logo.png" style="max-width:300px"><br>
+  <button onclick="newGame()">はじめる</button>
+</section>
+
+<section id="select">
+  <h2>キャラクター選択（最大6体）</h2>
+  <div id="party"></div>
+  <button onclick="addCharacter()">＋追加</button><br>
+  <button onclick="goStudy()">次へ</button>
+</section>
+
+<section id="study">
+  <h2>勉強時間入力</h2>
+  <div id="studyInputs"></div>
+  <button onclick="applyStudy()">反映</button>
+</section>
+
+<section id="battle">
+  <div id="bossLog"></div>
+  <div id="log"></div>
+  <h2 id="enemyName"></h2>
+  <p id="enemyHp"></p>
+  <p id="mp"></p>
+  <div id="skills"></div>
+  <div id="skip"></div>
+</section>
+
+<section id="dungeonIntro">
+  <h1 id="dungeonTitle" class="fade" style="font-size:40px;margin-top:100px"></h1>
+</section>
+
+<audio id="bgm" loop></audio>
+
+<script>
+let game, enemy;
+
+const evolutions={
+  チコリータ:[{lv:1,n:'チコリータ'},{lv:18,n:'ベイリーフ'},{lv:36,n:'メガニウム'}],
+  ポッチャマ:[{lv:1,n:'ポッチャマ'},{lv:18,n:'ポッタイシ'},{lv:36,n:'エンペルト'}],
+  ヒコザル:[{lv:1,n:'ヒコザル'},{lv:18,n:'モウカザル'},{lv:36,n:'ゴウカザル'}],
+  ブラッキー:[{lv:1,n:'ブラッキー'}],
+  グレイシア:[{lv:1,n:'グレイシア'}],
+  ラプラス:[{lv:1,n:'ラプラス'}]
+};
+
+const skillGroup={
+  チコリータ:'草',ベイリーフ:'草',メガニウム:'草',
+  ポッチャマ:'水',ポッタイシ:'水',エンペルト:'水',
+  ヒコザル:'炎',モウカザル:'炎',ゴウカザル:'炎',
+  ブラッキー:'悪',グレイシア:'氷',ラプラス:'氷'
+};
+
+const skills={
+  草:[{lv:3,n:'たいあたり',d:120,mp:30},{lv:8,n:'はっぱカッター',d:300,mp:45},{lv:16,n:'マジカルリーフ',d:600,mp:60},{lv:22,n:'ひかりのかべ',buff:2,mp:60},{lv:39,n:'ギガドレイン',d:1200,mp:80},{lv:50,n:'ソーラービーム',buff:3,mp:100}],
+  水:[{lv:3,n:'はたく',d:120,mp:30},{lv:8,n:'みずでっぽう',d:300,mp:45},{lv:16,n:'バブルこうせん',d:600,mp:60},{lv:22,n:'いばる',buff:2,mp:60},{lv:39,n:'ドリルくちばし',d:1200,mp:80},{lv:50,n:'ハイドロポンプ',buff:3,mp:100}],
+  炎:[{lv:3,n:'ひっかく',d:120,mp:30},{lv:8,n:'ひのこ',d:300,mp:45},{lv:16,n:'かえんぐるま',d:600,mp:60},{lv:22,n:'からげんき',buff:2,mp:60},{lv:39,n:'アクロバット',d:1200,mp:80},{lv:50,n:'かえんほうしゃ',buff:3,mp:100}],
+  悪:[{lv:3,n:'たいあたり',d:120,mp:30},{lv:8,n:'でんこうせっか',d:300,mp:45},{lv:16,n:'シャドーボール',d:600,mp:60},{lv:22,n:'チャームボイス',percent:10,mp:120,pose:true},{lv:39,n:'あくのはどう',d:1200,mp:80},{lv:50,n:'かみくだく',half:true,mp:100}],
+  氷:[{lv:3,n:'たいあたり',d:120,mp:30},{lv:8,n:'でんこうせっか',d:300,mp:45},{lv:16,n:'こおりのつぶて',d:600,mp:60},{lv:22,n:'チャームボイス',percent:10,mp:120,pose:true},{lv:39,n:'れいとうビーム',d:1200,mp:80},{lv:50,n:'ふぶき',half:true,mp:100}]
+};
+
+const dungeons=[
+  {name:'森',mobs:[{name:'もりのスライム',hp:800},{name:'ウッドゴブリン',hp:1000}],boss:{name:'森の王',hp:5000}},
+  {name:'深海',mobs:[{name:'あわクラゲ',hp:1200},{name:'ディープフィッシュ',hp:1500}],boss:{name:'深海の王',hp:8000}},
+  {name:'空',mobs:[{name:'スカイバット',hp:2000},{name:'サンダーバード',hp:2200}],boss:{name:'天空の王',hp:12000}},
+  {name:'神殿',mobs:[{name:'ガーディアン像',hp:2600},{name:'古代兵士',hp:3000}],boss:{name:'神殿の守護者',hp:16000}}
+];
+
+function show(id){
+  document.querySelectorAll('section').forEach(s=>s.style.display='none');
+  document.getElementById(id).style.display='block';
+  // タイトル画面や選択画面ではBGM停止
+  if(id==='title' || id==='select' || id==='study'){
+    stopBGM();
+  }
+}
+function log(msg){const l=document.getElementById('log');l.innerHTML+=msg+'<br>';l.scrollTop=l.scrollHeight;}
+function evoName(c){let n=c.base;evolutions[c.base].forEach(e=>{if(c.lv>=e.lv)n=e.n});return n;}
+
+function newGame(){
+  // ユーザー操作をトリガーにBGM再生を許可
+  const a=document.getElementById('bgm');
+  a.volume=0.4;
+  a.play().catch(()=>{});
+game={party:[],dungeon:0,turn:0,stage:0};addCharacter();show('select');}
+function addCharacter(){if(game.party.length>=6)return;game.party.push({base:'チコリータ',nick:'',study:0,lv:1,mp:200,maxMp:200,skills:[]});renderParty();}
+
+function renderParty(){
+  const d=document.getElementById('party');d.innerHTML='';
+  game.party.forEach((c,i)=>{
+    d.innerHTML+=`<div>
+      <select onchange="game.party[${i}].base=this.value;game.party[${i}].skills=[];renderParty()">
+        ${Object.keys(evolutions).map(b=>`<option ${c.base===b?'selected':''}>${b}</option>`).join('')}
+      </select>
+      <input placeholder='ニックネーム' value='${c.nick}' oninput="game.party[${i}].nick=this.value">
+      <small>（${evoName(c)}）</small>
+    </div>`;
+  });
+}
+
+function goStudy(){
+  const d=document.getElementById('studyInputs');d.innerHTML='';
+  game.party.forEach((c,i)=>{
+    const nick=c.nick||'キャラ'+(i+1);
+    d.innerHTML+=`${nick}（${c.base}） Lv${c.lv} → <span id='pred${i}'>Lv${c.lv}</span><br>`+
+      `<input id='s${i}' type='number' value='0' oninput='updatePred(${i})'> 時間<br>`;
+  });
+  show('study');
+}
+
+function updatePred(i){
+  const c=game.party[i];
+  const h=Number(document.getElementById('s'+i).value||0);
+  const future=Math.min(50,Math.floor((c.study+h)/2));
+  document.getElementById('pred'+i).textContent='Lv'+future;
+}
+
+function learn(c){
+  const before=evoName(c);
+  skills[skillGroup[evoName(c)]].forEach(s=>{if(s.lv<=c.lv&&!c.skills.includes(s))c.skills.push(s);});
+  const after=evoName(c);
+  if(before!==after)log(`${c.nick||'キャラ'} は ${after} に進化した！`);
+}
+
+function applyStudy(){
+  show('battle');document.getElementById('log').innerHTML='';
+  game.party.forEach((c,i)=>{
+    const h=Number(document.getElementById('s'+i).value||0);
+    const beforeLv=c.lv;c.study+=h;c.lv=Math.min(50,Math.floor(c.study/2));
+    if(c.lv>beforeLv)log(`${c.nick||'キャラ'} は Lv${beforeLv}→${c.lv}！`);
+    learn(c);
+  });
+  startBattle();
+}
+
+function startBattle(){
+  const d=dungeons[game.dungeon];
+  playBGM(d.name);
+  const bossLog=document.getElementById('bossLog');
+  bossLog.style.display='none';
+  if(game.stage<d.mobs.length){enemy={...d.mobs[game.stage]};log(`${enemy.name} があらわれた！`);} 
+  else{enemy={...d.boss};enemy.name=d.name+'ボス：'+enemy.name;bossLog.textContent='⚠ ボス戦開始！';bossLog.style.display='block';log(`${enemy.name} に挑む！`);} 
+  game.turn=0;renderBattle();
+}
+
+function renderBattle(){
+  const c=game.party[game.turn];
+  document.getElementById('enemyName').textContent=enemy.name;
+  document.getElementById('enemyHp').textContent='HP:'+enemy.hp;
+  document.getElementById('mp').textContent=`${c.nick||'キャラ'+(game.turn+1)}（${evoName(c)}） MP:${c.mp}/${c.maxMp}`;
+  const s=document.getElementById('skills');const skp=document.getElementById('skip');s.innerHTML='';skp.innerHTML='';
+  let usable=false;
+  c.skills.forEach(sk=>{const b=document.createElement('button');b.textContent=`${sk.n} MP:${sk.mp}`;if(c.mp<sk.mp)b.className='gray';else usable=true;b.onclick=()=>useSkill(c,sk);s.appendChild(b);});
+  if(!usable){const sb=document.createElement('button');sb.textContent='MPがないので次の仲間へ';sb.onclick=skipTurn;skp.appendChild(sb);}
+}
+
+function skipTurn(){
+  log(`${game.party[game.turn].nick||'キャラ'} は行動できない…`);
+  game.turn=(game.turn+1)%game.party.length;
+  if(game.party.every(p=>p.skills.every(sk=>p.mp<sk.mp))){
+    alert('全員MP不足');
+    show('title');
+    return;
+  }
+  renderBattle();
+}
+
+function stopBGM(){
+  const a=document.getElementById('bgm');
+  a.pause();
+  a.currentTime=0;
+  a.dataset.src='';
+}
+
+function playBGM(name){
+  const a=document.getElementById('bgm');
+  const map={
+    '森':'forest.mp3',
+    '深海':'deepsea.mp3',
+    '空':'sky.mp3',
+    '神殿':'temple.mp3'
+  };
+  const src=map[name];
+  if(!src)return;
+  if(a.dataset.src===src)return;
+  a.src=src;
+  a.dataset.src=src;
+  a.volume=0.4;
+  a.play().catch(()=>{});
+}
+
+function useSkill(c,sk){
+  // チャームボイス演出（ログ＋ハート）
+  if(sk.pose){
+    log('💖 チャーミングなポーズをしてください！');
+    const h=document.createElement('div');
+    h.className='heart';
+    h.textContent='💖';
+    h.style.left='50%';
+    h.style.top='50%';
+    document.body.appendChild(h);
+    setTimeout(()=>h.remove(),1500);
+  }
+
+  if(c.mp<sk.mp){
+    log('MPが足りない！');
+    return;
+  }
+  c.mp-=sk.mp;
+  log(`${c.nick} は ${sk.n} を使った！`);
+  if(sk.d){enemy.hp-=sk.d;log(`${sk.d}ダメージ！`);}  
+  if(sk.buff){c.lv=Math.min(50,Math.floor(c.lv*sk.buff));learn(c);log('勉強効率が上がった！');}
+  if(sk.percent){const targetHp=Math.floor(enemy.hp*(sk.percent/100));enemy.hp=targetHp;log(`敵のHPが${sk.percent}%になった！`);}  
+  if(sk.half){enemy.hp=Math.floor(enemy.hp/2);log('敵のHPが半分になった！');}  
+  if(enemy.hp<=0){
+    const bossLog=document.getElementById('bossLog');
+    if(enemy.name.includes('ボス')){bossLog.textContent='🏆 ボス撃破！';bossLog.style.display='block';}
+    log(enemy.name+' を倒した！');
+    if(game.stage<dungeons[game.dungeon].mobs.length){game.stage++;startBattle();return;}
+    game.party.forEach(p=>p.mp=p.maxMp);game.dungeon++;game.stage=0;
+    if(game.dungeon>=dungeons.length){alert('全ダンジョンクリア！');show('title');return;}
+    showDungeonIntro();return;
+  }
+  game.turn=(game.turn+1)%game.party.length;
+  renderBattle();
+}
+
+function showDungeonIntro(){
+  const d=dungeons[game.dungeon];const t=document.getElementById('dungeonTitle');
+  t.textContent=d.name+' ダンジョン';t.classList.remove('fade');void t.offsetWidth;t.classList.add('fade');
+  show('dungeonIntro');setTimeout(()=>{show('battle');startBattle();},2500);
+}
+
+show('title');
+</script>
+</body>
+</html>
